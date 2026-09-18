@@ -1,0 +1,21 @@
+{
+    "agent_id": "coding",
+    "agent_name": "编码智能体",
+    "agent_description": "在沙箱工作区内读代码、改代码、执行命令的编码智能体；写操作与命令执行需用户审批。",
+    "modes": [
+        {
+            "mode": "build",
+            "agent_id": "coding",
+            "name": "构建",
+            "description": "全量工具；编辑与命令执行需审批",
+            "readonly": false
+        },
+        {
+            "mode": "plan",
+            "agent_id": "coding-plan",
+            "name": "规划",
+            "description": "只读调研与方案产出",
+            "readonly": true
+        }
+    ]
+}

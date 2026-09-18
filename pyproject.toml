@@ -1,0 +1,42 @@
+[project]
+name = "egis-opencode"
+version = "0.1.0"
+description = "egis-opencode — 基于 ark-agentic 底座的 opencode 式 Coding Agent 平台"
+requires-python = ">=3.12"
+dependencies = [
+    "ark-agentic[server]>=0.7.6",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.128.0",
+    "mammoth>=1.12.1",
+]
+
+[project.scripts]
+egis-opencode = "egis_opencode.app:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+]
+
+# ── 本地开发 vs 生产 ───────────────────────────────────
+# 本地开发：uv sync 通过 path source 安装 editable 版本
+# 生产部署：uv build 打包 whl，pip install 从 PyPI / 私有 registry 安装
+[tool.uv.sources]
+ark-agentic = { path = "../ark-agentic", editable = true }  # editable 绕过 ark 的 force-include 构建 bug
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/egis_opencode"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]

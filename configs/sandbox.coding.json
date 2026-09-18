@@ -1,0 +1,33 @@
+{
+    "enabled": true,
+    "default_backend": "process",
+    "workspace": {
+        "enabled": true,
+        "scope": "user",
+        "root": "data/ark_workspaces",
+        "access": "read_write",
+        "cleanup_interval": 3600
+    },
+    "shell": {
+        "enabled": false,
+        "backend": "process",
+        "shell": "bash",
+        "timeout": 120,
+        "max_output_bytes": 20000,
+        "env_allowlist": [
+            "PATH",
+            "LANG",
+            "LC_ALL",
+            "HOME",
+            "PYTHONPATH"
+        ]
+    },
+    "tools": {},
+    "_comment": [
+        "部署位置：CONFIG_DIR/coding/sandbox.json（默认 data/ark_config/coding/sandbox.json）",
+        "shell.enabled=false：不注册 ark 默认 sandbox_exec 工具（egis 的 BashTool 已占名 bash），",
+        "  但 backend/timeout/max_output_bytes/env_allowlist 仍被 egis BashTool 经 execute_shell_tool 使用",
+        "workspace.root 必须与 .env 的 CODING_WORKSPACE_ROOT 一致（默认 data/ark_workspaces）",
+        "企业环境升级路径：default_backend 改 docker/opensandbox/sfesandbox 并补充 backends 段"
+    ]
+}

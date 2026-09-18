@@ -73,13 +73,27 @@ async def test_tree_depth_one_marks_all_dirs_lazy(service, local_wiki):
 
 
 async def test_tree_subpath_listing(service, local_wiki):
-    """懒加载：仅列 wiki 子树，path 相对根。"""
+    """懒加载：仅列 wiki 子树，path 相对根（带父前缀，可直接喂 read_file）。"""
     nodes, _ = await service.file_tree(
         "alice", f"local:{local_wiki}", path="wiki/concepts", depth=1,
     )
     assert [n.name for n in nodes] == ["rag.md"]
+    # 回归：丢父前缀会让前端 openFile 请求根级 rag.md → 404
+    assert nodes[0].path == "wiki/concepts/rag.md"
     assert nodes[0].type == "file"
     assert nodes[0].size > 0
+
+
+async def test_tree_subpath_depth2_prefixes_children(service, local_wiki):
+    """子目录请求的递归层同样带父前缀（前端展开链路逐层懒加载）。"""
+    nodes, _ = await service.file_tree(
+        "alice", f"local:{local_wiki}", path="wiki", depth=2,
+    )
+    assert _find(nodes, "wiki/concepts") is not None
+    assert _find(nodes, "wiki/index.md") is not None
+    # 子目录请求返回的 path 直接可用于 read_file（端到端闭环）
+    content = service.read_file("alice", f"local:{local_wiki}", "wiki/index.md")
+    assert content.content == "# 首页\n"
 
 
 async def test_tree_multitenant_user_root(ws_user_root, service):

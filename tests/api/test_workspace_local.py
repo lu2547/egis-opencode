@@ -1,12 +1,15 @@
 """工作目录本地绑定 + slash 命令集成测试。
 
 覆盖：bind/binding REST、chat 携带 workspace_root（工具锚定本地目录、
-权限审批链路不变）、/ingest 展开进 user 消息、commands 列表端点。
+权限审批链路不变）、/ingest 展开进 user 消息、commands 列表端点、
+.env 默认工作目录回落（前端不传 workspace_root 时的服务端兑底）。
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -15,6 +18,7 @@ import httpx
 import pytest
 from langchain_core.messages import AIMessage
 
+from egis_opencode.config import settings
 from egis_opencode.permissions.rules import Rule
 
 from .conftest import chat_payload
@@ -284,3 +288,200 @@ async def test_commands_endpoint_default_user_root(make_app, ws_user_root):
         )
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── .env 默认工作目录（前端不传 workspace_root 的服务端兑底）──
+
+
+@contextlib.contextmanager
+def _default_workspace(mode: str, directory: str):
+    """临时覆盖默认工作目录配置（frozen settings 整体换 __dict__）。"""
+    old = dict(settings.__dict__)
+    object.__setattr__(
+        settings, "__dict__",
+        dataclasses.replace(
+            settings,
+            default_workspace_mode=mode,
+            default_workspace_dir=directory,
+        ).__dict__,
+    )
+    try:
+        yield
+    finally:
+        object.__setattr__(settings, "__dict__", old)
+
+
+async def test_binding_falls_back_to_env_default(make_app, local_wiki):
+    """无显式绑定的会话：binding 查询返回 .env 默认工作目录。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(local_wiki)):
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-no-binding"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["workspace_root"] == f"local:{local_wiki}"
+        assert body["status"]["name"] == "llm-wiki"
+        # 未持久化：会话绑定存储仍为空（.env 变更重启后自动跟随）
+        from egis_opencode.sessions.workspace_binding import workspace_binding_store
+        assert not workspace_binding_store.get("sess-no-binding")
+
+
+async def test_chat_without_workspace_root_uses_env_default(
+    make_app, local_wiki, ws_user_root,
+):
+    """前端不传 workspace_root：chat 锚定 .env 默认工作目录。"""
+    app, _llm = make_app(responses=[
+        _tool_call_message("read", path="raw/article.md"),
+        AIMessage(content="读到了。"),
+        AIMessage(content="标题"),
+    ])
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(local_wiki)):
+            resp = await client.post(
+                "/api/coding/chat",
+                json=chat_payload(
+                    "读素材", session_id="sess-env-default", stream=False,
+                ),
+            )
+            assert resp.status_code == 200
+            messages = await client.get(
+                "/api/coding/sessions/sess-env-default/messages",
+                params={"user_id": "alice"},
+            )
+    # read 命中默认目录的素材（非多租户 workspace）
+    tool_texts = [
+        tr["content"]
+        for m in messages.json()
+        for tr in (m.get("tool_results") or [])
+    ]
+    assert any("素材内容" in str(t) for t in tool_texts), tool_texts
+
+
+async def test_unbind_falls_back_to_env_default(make_app, local_wiki, tmp_path):
+    """解绑 = 清除显式绑定，回落 .env 默认（与 binding 查询同源）。"""
+    other = tmp_path / "other-proj"
+    other.mkdir()
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(local_wiki)):
+            # 显式绑定到另一个目录
+            await client.post(
+                "/api/coding/workspaces/bind",
+                json={
+                    "user_id": "alice",
+                    "session_id": "sess-unbind",
+                    "workspace_root": f"local:{other}",
+                },
+            )
+            # 解绑：响应回落 .env 默认（而非空串）
+            resp = await client.post(
+                "/api/coding/workspaces/bind",
+                json={
+                    "user_id": "alice",
+                    "session_id": "sess-unbind",
+                    "workspace_root": "",
+                },
+            )
+            assert resp.json()["workspace_root"] == f"local:{local_wiki}"
+            # 后续 binding 查询同源：也返回默认目录
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-unbind"},
+            )
+            assert resp.json()["workspace_root"] == f"local:{local_wiki}"
+
+
+async def test_invalid_default_dir_falls_back_to_multi(make_app, tmp_path):
+    """默认目录不存在：静默回落多租户（binding 返回空串）。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(tmp_path / "missing")):
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-bad-default"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["workspace_root"] == ""
+
+
+async def test_default_mode_multi_keeps_legacy_behavior(make_app):
+    """mode=multi（默认）：无绑定空串多租户 —— 旧版行为不变。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("multi", ""):
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-multi"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["workspace_root"] == ""
+
+
+async def test_default_endpoint_returns_env_default(make_app, local_wiki):
+    """GET /workspaces/default：直接返回 .env 默认（is_default=True）。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(local_wiki)):
+            resp = await client.get("/api/coding/workspaces/default")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["workspace_root"] == f"local:{local_wiki}"
+        assert body["is_default"] is True
+        assert body["status"]["name"] == "llm-wiki"
+
+
+async def test_default_endpoint_empty_when_not_configured(make_app):
+    """未配置默认：空串 + is_default=False（前端回落多租户展示）。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("multi", ""):
+            resp = await client.get("/api/coding/workspaces/default")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "workspace_root": "", "status": None, "is_default": False,
+        }
+
+
+async def test_binding_default_fallback_flagged(make_app, local_wiki):
+    """binding 回落到默认时 is_default=True（区别于显式绑定）。"""
+    app, _ = make_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        with _default_workspace("local", str(local_wiki)):
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-flag"},
+            )
+            assert resp.json()["is_default"] is True
+            # 显式绑定压过默认且 is_default=False
+            await client.post(
+                "/api/coding/workspaces/bind",
+                json={
+                    "user_id": "alice",
+                    "session_id": "sess-flag",
+                    "workspace_root": f"local:{local_wiki}",
+                },
+            )
+            resp = await client.get(
+                "/api/coding/workspaces/binding",
+                params={"session_id": "sess-flag"},
+            )
+            assert resp.json()["is_default"] is False

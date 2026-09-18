@@ -14,7 +14,7 @@ from typing import Any
 
 from ark_agentic.core.protocol.plugin import BasePlugin
 
-from ..agents.coding.tools.bash import sandbox_binding
+from ..core.tools.bash import sandbox_binding
 from . import chat
 from .routes import commands, meta, permissions, questions, sessions, workspaces
 

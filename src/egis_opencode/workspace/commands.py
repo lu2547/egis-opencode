@@ -1,10 +1,14 @@
-"""Slash 命令发现与展开 — 工作目录下的 ``.opencode/commands`` / ``.claude/commands``。
+"""Slash 命令发现与展开 — 双层：agent 内置命令 + 工作目录命令。
 
-opencode 生态约定：命令是 Markdown 文件（frontmatter ``description`` +
-正文，``$ARGUMENTS`` 占位符）。egis-opencode 在 chat 入口把
-``/ingest <args>`` 展开为「命令正文 + AGENTS.md 项目上下文」的完整
-提示词再交给 agent —— 命令定义放在哪个工作目录，就由该目录生效
-（本地目录会话读该目录的命令，多租户模式读用户 workspace 根）。
+- agent 内置：``agents/<agent>/commands/*.md``（wiki-agent 的 /ingest 等，
+  优先级最高 —— 平台提供的命令不随工作目录变）
+- 工作目录：``.opencode/commands`` / ``.claude/commands``（opencode 生态
+  约定：frontmatter ``description`` + 正文，``$ARGUMENTS`` 占位符）
+
+skills（目录 + SKILL.md 形态）不经本模块 —— 由 ark SkillLoader 加载、
+模型经 read_skill 工具自主触发（见 core/agent.py）。
+egis-opencode 在 chat 入口把 ``/ingest <args>`` 展开为「命令正文 +
+AGENTS.md 项目上下文」的完整提示词再交给 agent。
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-#: 命令目录约定（先到先得：opencode 优先于 claude）
+#: 工作目录命令约定（先到先得：opencode 优先于 claude）
 _COMMAND_DIRS = (".opencode/commands", ".claude/commands")
 
 #: AGENTS.md 注入上限（字节）——过大的项目规范截断，避免挤爆上下文
@@ -34,26 +38,37 @@ class CommandSpec:
     body: str
 
 
-def discover_commands(root: Path) -> dict[str, CommandSpec]:
-    """扫描工作目录下的命令定义（同名时 .opencode 优先）。"""
+def discover_commands(
+    root: Path, agent_commands: Path | None = None,
+) -> dict[str, CommandSpec]:
+    """扫描命令定义：agent 内置目录在前（优先级最高），后扫工作目录。"""
     commands: dict[str, CommandSpec] = {}
-    if not root.is_dir():
-        return commands
-    for rel in _COMMAND_DIRS:
-        base = root / rel
-        if not base.is_dir():
-            continue
-        for file in sorted(base.glob("*.md")):
+    if agent_commands is not None and agent_commands.is_dir():
+        for file in sorted(agent_commands.glob("*.md")):
             name = file.stem.strip()
             if not name or name in commands:
                 continue
             spec = _parse_command_file(file)
             if spec is not None:
                 commands[name] = spec
+    if root.is_dir():
+        for rel in _COMMAND_DIRS:
+            base = root / rel
+            if not base.is_dir():
+                continue
+            for file in sorted(base.glob("*.md")):
+                name = file.stem.strip()
+                if not name or name in commands:
+                    continue
+                spec = _parse_command_file(file)
+                if spec is not None:
+                    commands[name] = spec
     return commands
 
 
-def expand_command(message: str, root: Path) -> str | None:
+def expand_command(
+    message: str, root: Path, agent_commands: Path | None = None,
+) -> str | None:
     """把 ``/name args`` 展开为完整提示词；非命令消息返回 None。
 
     - 命中：命令正文（``$ARGUMENTS`` → args）+ AGENTS.md 项目上下文
@@ -68,7 +83,7 @@ def expand_command(message: str, root: Path) -> str | None:
     name = parts[0]
     args = parts[1].strip() if len(parts) > 1 else ""
 
-    commands = discover_commands(root)
+    commands = discover_commands(root, agent_commands)
     spec = commands.get(name)
     if spec is None:
         available = "、".join(f"/{n}" for n in sorted(commands)) or "（无）"

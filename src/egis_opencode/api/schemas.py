@@ -70,10 +70,14 @@ class WorkspaceBindRequest(BaseModel):
 
 
 class WorkspaceBindingResponse(BaseModel):
-    """工作目录绑定信息（bind/binding 端点共用）。"""
+    """工作目录绑定信息（bind/binding/default 端点共用）。"""
 
     workspace_root: str = ""
     status: ProjectStatusResponse | None = None
+    #: 当前 root 是否服务端 .env 默认（非用户显式绑定）——
+    #: 前端据此区分“默认目录展示”与“显式绑定”：前者 chat 不携带
+    #: workspace_root（后端每轮解析，.env 变更立即跟随）
+    is_default: bool = False
 
 
 class CommandInfo(BaseModel):

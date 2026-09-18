@@ -22,7 +22,7 @@ from ark_agentic.core.subtask.tool import SpawnSubtasksTool
 from ark_agentic.core.tools.base import ToolParameter
 from ark_agentic.core.types import AgentToolResult
 
-from ....events import SUBAGENT_PROGRESS, SubagentProgressPayload
+from ...events import SUBAGENT_PROGRESS, SubagentProgressPayload
 from .base import CodingTool
 
 logger = logging.getLogger(__name__)

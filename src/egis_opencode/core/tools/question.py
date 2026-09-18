@@ -22,8 +22,8 @@ from typing import Any
 from ark_agentic.core.tools.base import ToolParameter
 from ark_agentic.core.types import AgentToolResult
 
-from ....events import QUESTION_REQUEST, QUESTION_RESOLVED
-from ....questions import QuestionAnswer, question_service
+from ...events import QUESTION_REQUEST, QUESTION_RESOLVED
+from ...questions import QuestionAnswer, question_service
 
 from .base import CodingTool
 

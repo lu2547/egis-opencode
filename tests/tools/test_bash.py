@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from ark_agentic.core.types import AgentToolResult, ToolCall
 
-from egis_opencode.agents.coding.tools.bash import (
+from egis_opencode.core.tools.bash import (
     BashTool,
     SandboxBinding,
     sandbox_binding,
@@ -313,7 +313,7 @@ class TestBarePipGuard:
         ],
     )
     def test_bare_pip_blocked(self, command):
-        from egis_opencode.agents.coding.tools.bash import _find_bare_pip_install
+        from egis_opencode.core.tools.bash import _find_bare_pip_install
 
         assert _find_bare_pip_install(command) is not None
 
@@ -334,7 +334,7 @@ class TestBarePipGuard:
         ],
     )
     def test_safe_commands_pass(self, command):
-        from egis_opencode.agents.coding.tools.bash import _find_bare_pip_install
+        from egis_opencode.core.tools.bash import _find_bare_pip_install
 
         assert _find_bare_pip_install(command) is None
 

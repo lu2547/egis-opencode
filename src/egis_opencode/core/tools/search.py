@@ -10,9 +10,9 @@ from typing import Any
 from ark_agentic.core.tools.base import ToolParameter
 from ark_agentic.core.types import AgentToolResult
 
-from ....config import settings
-from ....events import diff_preview
-from ....workspace import WorkspacePathError
+from ...config import settings
+from ...events import diff_preview
+from ...workspace import WorkspacePathError
 from .base import CodingTool
 
 #: grep 跳过的二进制扩展名（与 files.py 黑名单同源，读取失败亦降级跳过）

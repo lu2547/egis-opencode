@@ -37,6 +37,21 @@ class Settings:
             .strip().lower() in ("1", "true", "yes", "on")
         )
     )
+    #: 默认工作目录模式 —— 前端未传 workspace_root 且会话无绑定时的
+    #: 服务端兜底（对齐 opencode「启动即工作目录」的单机部署形态）：
+    #: ``local`` = 锚定 CODING_DEFAULT_WORKSPACE_DIR；``multi``（默认）
+    #: = 多租户用户根，行为与未引入该配置时完全一致
+    default_workspace_mode: str = field(
+        default_factory=lambda: os.getenv(
+            "CODING_DEFAULT_WORKSPACE_MODE", "multi",
+        ).strip().lower()
+    )
+    #: 默认工作目录（mode=local 时生效；绝对路径，相对按进程 CWD 解析）
+    default_workspace_dir: str = field(
+        default_factory=lambda: os.getenv(
+            "CODING_DEFAULT_WORKSPACE_DIR", "",
+        ).strip()
+    )
 
     # ── 权限 ──────────────────────────────────────────
     #: ask 权限等待应答超时（秒）；超时按拒绝处理

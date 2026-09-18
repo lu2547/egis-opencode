@@ -13,7 +13,7 @@ import asyncio
 import pytest
 from ark_agentic.core.types import ToolCall
 
-from egis_opencode.agents.coding.tools.question import QuestionTool
+from egis_opencode.core.tools.question import QuestionTool
 from egis_opencode.events import QUESTION_REQUEST, QUESTION_RESOLVED
 from egis_opencode.questions import (
     QuestionService,
@@ -29,7 +29,7 @@ def svc(monkeypatch: pytest.MonkeyPatch) -> QuestionService:
     """独立短超时实例替换工具模块绑定的进程级单例。"""
     service = QuestionService(timeout_seconds=2)
     monkeypatch.setattr(
-        "egis_opencode.agents.coding.tools.question.question_service", service,
+        "egis_opencode.core.tools.question.question_service", service,
     )
     return service
 
@@ -175,6 +175,6 @@ async def test_options_normalized(svc, recorder):
 
 async def test_default_singleton_wired():
     """工具模块默认绑定进程级单例（生产路径）。"""
-    from egis_opencode.agents.coding.tools import question as question_module
+    from egis_opencode.core.tools import question as question_module
 
     assert question_module.question_service is question_service

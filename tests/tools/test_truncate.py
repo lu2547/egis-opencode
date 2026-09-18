@@ -14,7 +14,7 @@ import dataclasses
 import os
 import time
 
-from egis_opencode.agents.coding.tools.truncate import (
+from egis_opencode.core.tools.truncate import (
     TRUNCATION_DIRNAME,
     truncate_line,
     truncate_output,

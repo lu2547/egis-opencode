@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from ark_agentic.core.types import ToolCall
 
-from egis_opencode.agents.coding.tools.files import (
+from egis_opencode.core.tools.files import (
     EditTool,
     ListTool,
     ReadTool,

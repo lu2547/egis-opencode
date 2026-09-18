@@ -95,7 +95,7 @@ def test_multi_tenant_paths_unchanged(ws_root: Path):
 
 
 async def test_read_tool_anchored_to_local_dir(local_dir: Path):
-    from egis_opencode.agents.coding.tools.files import ReadTool
+    from egis_opencode.core.tools.files import ReadTool
 
     (local_dir / "wiki" / "index.md").write_text("# 首页\n", encoding="utf-8")
     tool = ReadTool()
@@ -108,7 +108,7 @@ async def test_read_tool_anchored_to_local_dir(local_dir: Path):
 
 
 async def test_read_tool_rejects_escape_from_anchored(local_dir: Path):
-    from egis_opencode.agents.coding.tools.files import ReadTool
+    from egis_opencode.core.tools.files import ReadTool
 
     tool = ReadTool()
     ctx = {"user:id": "alice", "workspace:root": str(local_dir)}
@@ -119,7 +119,7 @@ async def test_read_tool_rejects_escape_from_anchored(local_dir: Path):
 
 
 async def test_write_tool_anchored_creates_under_local_dir(local_dir: Path):
-    from egis_opencode.agents.coding.tools.files import WriteTool
+    from egis_opencode.core.tools.files import WriteTool
 
     tool = WriteTool()
     ctx = {"user:id": "alice", "workspace:root": str(local_dir)}
@@ -137,7 +137,7 @@ async def test_anchored_root_missing_dir_falls_back_multitenant(
     ws_root: Path, tmp_path: Path,
 ):
     """workspace:root 指向不存在目录 → 回落多租户（is_dir 守卫）。"""
-    from egis_opencode.agents.coding.tools.files import ReadTool
+    from egis_opencode.core.tools.files import ReadTool
 
     (ws_root / "alice").mkdir(parents=True, exist_ok=True)
     (ws_root / "alice" / "note.md").write_text("多租户内容", encoding="utf-8")

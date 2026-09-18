@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from ark_agentic.core.types import AgentToolResult, ToolCall
 
-from egis_opencode.agents.coding.tools.task import (
+from egis_opencode.core.tools.task import (
     SUBTASK_ALLOWED_TOOLS,
     TaskTool,
     _extract_labels,

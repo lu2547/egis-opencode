@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from ....config import settings
+from ...config import settings
 
 #: 截断文件保留时长（秒；对齐 opencode RETENTION = 7 天）
 _RETENTION_SECONDS = 7 * 24 * 3600

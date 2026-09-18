@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from ark_agentic.core.types import ToolCall
 
-from egis_opencode.agents.coding.tools.search import GlobTool, GrepTool
+from egis_opencode.core.tools.search import GlobTool, GrepTool
 from egis_opencode.events import TOOL_DIGEST
 
 from tests.helpers import RecordingHandler

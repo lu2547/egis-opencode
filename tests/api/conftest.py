@@ -20,7 +20,7 @@ from ark_agentic.core.runtime.registry import AgentRegistry
 from ark_agentic.core.session import SessionManager
 
 from egis_opencode.agents.coding.agent import CodingAgent, CodingPlanAgent
-from egis_opencode.agents.coding.tools import create_coding_tools
+from egis_opencode.core.tools import create_coding_tools
 from egis_opencode.api.plugin import CodingPlugin
 from egis_opencode.permissions.guard import PermissionGuard
 from egis_opencode.permissions.presets import build_ruleset, plan_ruleset

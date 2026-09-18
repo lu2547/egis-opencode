@@ -66,6 +66,21 @@ async def bind_workspace(body: WorkspaceBindRequest) -> WorkspaceBindingResponse
     if not body.workspace_root:
         if body.session_id:
             workspace_binding_store.delete(body.session_id)
+        # 解绑 = 清除显式绑定，回落 .env 默认工作目录（而非直接
+        # 多租户）—— 与后续 getWorkspaceBinding / chat 的解析结果
+        # 保持一致，前端 UI 不会解绑后仍显示旧目录
+        fallback = service.default_binding()
+        if fallback:
+            try:
+                status = await service.local_status(fallback)
+            except WorkspacePathError:  # pragma: no cover — 已校验
+                status = None
+            if status is not None:
+                return WorkspaceBindingResponse(
+                    workspace_root=fallback,
+                    status=ProjectStatusResponse(**status.__dict__),
+                    is_default=True,
+                )
         return WorkspaceBindingResponse(workspace_root="")
     try:
         status = await service.local_status(body.workspace_root)
@@ -79,22 +94,58 @@ async def bind_workspace(body: WorkspaceBindRequest) -> WorkspaceBindingResponse
     )
 
 
-@router.get("/workspaces/binding")
-async def get_workspace_binding(session_id: str) -> WorkspaceBindingResponse:
-    """会话当前的工作目录绑定（无绑定返回空串 = 多租户模式）。"""
-    stored = workspace_binding_store.get(session_id) or ""
-    if not stored:
-        return WorkspaceBindingResponse(workspace_root="")
+@router.get("/workspaces/default")
+async def get_workspace_default() -> WorkspaceBindingResponse:
+    """服务端默认工作目录（.env CODING_DEFAULT_WORKSPACE_MODE/DIR）。
+
+    前端启动时优先取此端点：有默认则直接展示（is_default=True，
+    chat 不携带 workspace_root，后端每轮解析，.env 变更立即跟随）；
+    空串 = 未配置/无效，前端回落本地 localStorage 自动恢复。
+    """
     service = get_workspace_service()
+    raw = service.default_binding()
+    if not raw:
+        return WorkspaceBindingResponse(workspace_root="")
     try:
-        status = await service.local_status(stored)
-    except WorkspacePathError:
-        # 目录已失效：清掉脏绑定，按多租户返回
-        workspace_binding_store.delete(session_id)
+        status = await service.local_status(raw)
+    except WorkspacePathError:  # pragma: no cover — default_binding 已校验
         return WorkspaceBindingResponse(workspace_root="")
     return WorkspaceBindingResponse(
-        workspace_root=stored,
+        workspace_root=raw,
         status=ProjectStatusResponse(**status.__dict__),
+        is_default=True,
+    )
+
+
+@router.get("/workspaces/binding")
+async def get_workspace_binding(session_id: str) -> WorkspaceBindingResponse:
+    """会话当前的工作目录绑定（显式绑定 > .env 默认 > 空串多租户）。"""
+    service = get_workspace_service()
+    stored = workspace_binding_store.get(session_id) or ""
+    if stored:
+        try:
+            status = await service.local_status(stored)
+        except WorkspacePathError:
+            # 显式绑定的目录已失效：清掉脏绑定，继续走默认回落
+            workspace_binding_store.delete(session_id)
+        else:
+            return WorkspaceBindingResponse(
+                workspace_root=stored,
+                status=ProjectStatusResponse(**status.__dict__),
+            )
+    # 无显式绑定（或已失效）：回落 .env 默认 —— UI 文件树/命令面板
+    # 与 chat 实际锚定目录同源，避免“卡片显示多租户、工具落默认目录”
+    default_raw = service.default_binding()
+    if not default_raw:
+        return WorkspaceBindingResponse(workspace_root="")
+    try:
+        status = await service.local_status(default_raw)
+    except WorkspacePathError:  # pragma: no cover — default_binding 已校验
+        return WorkspaceBindingResponse(workspace_root="")
+    return WorkspaceBindingResponse(
+        workspace_root=default_raw,
+        status=ProjectStatusResponse(**status.__dict__),
+        is_default=True,
     )
 
 

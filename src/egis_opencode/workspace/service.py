@@ -127,6 +127,36 @@ class WorkspaceService:
         """校验 local 绑定串并返回目录状态（不做会话持久化）。"""
         return await self.dir_status(self.resolve_binding(raw_binding))
 
+    def default_binding(self) -> str:
+        """服务端默认工作目录的绑定串（.env 驱动；未配置/无效返回空串）。
+
+        前端未显式传 workspace_root 且会话无绑定时的兑底 —— 对齐
+        opencode「启动即工作目录」的单机部署形态：本地/单人部署在
+        .env 配 CODING_DEFAULT_WORKSPACE_MODE=local + DIR，前端无需
+        绑定操作开箱即用。不持久化到会话：.env 修改重启后，未显式
+        绑定的会话立即跟随新值。
+        """
+        if settings.default_workspace_mode != "local":
+            return ""
+        raw_dir = settings.default_workspace_dir
+        if not raw_dir:
+            logger.warning(
+                "CODING_DEFAULT_WORKSPACE_MODE=local 但未配置 "
+                "CODING_DEFAULT_WORKSPACE_DIR，回落多租户",
+            )
+            return ""
+        # 相对路径按进程 CWD 解析（与 workspace_root_resolved 同约定）
+        path = Path(raw_dir)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        raw = f"local:{path}"
+        try:
+            self.resolve_binding(raw)
+        except WorkspacePathError as exc:
+            logger.warning("默认工作目录无效，回落多租户: %s", exc)
+            return ""
+        return raw
+
     # ── 文件浏览（目录树 + 预览） ────────────────
 
     def workspace_paths(self, user_id: str, workspace_root: str) -> WorkspacePaths:
@@ -146,6 +176,8 @@ class WorkspaceService:
 
         返回 ``(nodes, truncated)``：目录在前、文件在后，各自字母序；
         最深层目录 ``children=None``（前端展开时再请求该层）。
+        节点 path 一律相对 workspace 根（子目录请求也带父前缀，
+        前端直接拿去 read_file/toggleDir，否则深层文件 404）。
         """
         paths = self.workspace_paths(user_id, workspace_root)
         target = paths.user_root if not path.strip() else paths.resolve(path)
@@ -153,7 +185,8 @@ class WorkspaceService:
             raise WorkspacePathError(f"目录不存在或不是目录: {path or '.'}")
         depth = max(1, min(int(depth), 4))
         budget = [_TREE_NODE_LIMIT]
-        nodes = self._scan_dir(target, "", depth, budget)
+        prefix = path.strip().strip("/")
+        nodes = self._scan_dir(target, prefix, depth, budget)
         return nodes, budget[0] <= 0
 
     def read_file(

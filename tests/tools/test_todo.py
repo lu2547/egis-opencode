@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from ark_agentic.core.types import ToolCall
 
-from egis_opencode.agents.coding.tools.todo import TodoWriteTool
+from egis_opencode.core.tools.todo import TodoWriteTool
 from egis_opencode.events import TODO_UPDATE
 
 from tests.helpers import RecordingHandler

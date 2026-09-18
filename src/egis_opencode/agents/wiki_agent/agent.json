@@ -1,0 +1,14 @@
+{
+    "agent_id": "wiki",
+    "agent_name": "Wiki 知识库智能体",
+    "agent_description": "维护 LLM Wiki 知识库：摄取 raw/ 资料、检索回答、健康度巡检；写操作需用户审批。",
+    "modes": [
+        {
+            "mode": "wiki",
+            "agent_id": "wiki",
+            "name": "Wiki",
+            "description": "摄取 / 检索 / 巡检 LLM Wiki 知识库",
+            "readonly": false
+        }
+    ]
+}

@@ -73,18 +73,27 @@ async def chat(request: ChatRequest, http_request: Request):
 
     # 工作目录绑定：workspace_root 三态（None=沿用 / ""=解绑 / local:=锚定）。
     # 解析出目录后注入 input_context["workspace:root"]，文件/bash 工具
-    # 钩在该目录（见 agents/coding/tools/base.py）；slash 命令也读该目录。
+    # 钩在该目录（见 core/tools/base.py）；slash 命令与 workspace skills
+    # 也读该目录。
     anchored_root = _resolve_session_workspace(
         session_id, request.workspace_root,
     )
     if anchored_root is not None:
         input_context["workspace:root"] = str(anchored_root)
 
-    # slash 命令展开（/ingest 等）：命中则替换为命令全文 + AGENTS.md 上下文
+    # 工作目录解析后：重挂 workspace skills（.opencode/skills 等，
+    # 目录集合不变时零开销；ark read_skill 工具即刻可见）
     command_root = anchored_root or WorkspaceService().paths_for(
         user_id,
     ).ensure_user_root()
-    message = expand_command(request.message, command_root) or request.message
+    if hasattr(agent, "reload_workspace_skills"):
+        agent.reload_workspace_skills(command_root)
+
+    # slash 命令展开：agent 内置 commands 优先，workspace 自定义在后
+    message = expand_command(
+        request.message, command_root,
+        agent_commands=getattr(agent, "command_dir", None),
+    ) or request.message
 
     # AGENTS.md 项目规范：走 ark 内建 ``user:`` state → 系统提示 context 通道
     # （``merge_input_context`` 合入 session.state，每次 run
@@ -231,6 +240,8 @@ def _resolve_session_workspace(
 ) -> Path | None:
     """解析会话的有效工作目录（绑定串 → 目录），并同步持久化存储。
 
+    解析优先级：显式传参 > 会话已存绑定 > .env 默认（
+    CODING_DEFAULT_WORKSPACE_MODE/DIR，前端不传时的服务端兑底）。
     返回 None 表示多租户模式（不注入 workspace:root）。无效绑定
     （目录被删/配置关闭）不中断对话：清除存储并回落多租户。
     """
@@ -244,11 +255,13 @@ def _resolve_session_workspace(
             workspace_binding_store.set(session_id, workspace_root)
             return anchored
         workspace_binding_store.delete(session_id)
-        return None
+        return _default_workspace_or_none(service)
 
     stored = workspace_binding_store.get(session_id)
     if not stored:
-        return None
+        # 前端未传且会话无显式绑定：回落 .env 默认工作目录。
+        # 不持久化 —— 配置变更重启后未显式绑定的会话自动跟随
+        return _default_workspace_or_none(service)
     try:
         return service.resolve_binding(stored)
     except WorkspacePathError:
@@ -256,6 +269,18 @@ def _resolve_session_workspace(
             "stored workspace binding invalid, fallback: %s", stored,
         )
         workspace_binding_store.delete(session_id)
+        return _default_workspace_or_none(service)
+
+
+def _default_workspace_or_none(service: WorkspaceService) -> Path | None:
+    """.env 默认工作目录（有效返回目录；未配置/无效返回 None=多租户）。"""
+    default_raw = service.default_binding()
+    if not default_raw:
+        return None
+    try:
+        return service.resolve_binding(default_raw)
+    except WorkspacePathError:  # pragma: no cover — default_binding 已校验
+        logger.warning("default workspace invalid: %r", default_raw)
         return None
 
 

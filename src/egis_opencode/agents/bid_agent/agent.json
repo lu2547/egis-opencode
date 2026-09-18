@@ -1,0 +1,14 @@
+{
+    "agent_id": "bid",
+    "agent_name": "标书框架生成智能体",
+    "agent_description": "根据招标文件与项目需求生成标书文档框架：章节结构、内容要点与撰写分工建议；写操作需用户审批。",
+    "modes": [
+        {
+            "mode": "bid",
+            "agent_id": "bid",
+            "name": "标书",
+            "description": "生成标书文档框架：章节结构与内容要点",
+            "readonly": false
+        }
+    ]
+}

@@ -23,9 +23,9 @@ from ark_agentic.core.runtime._runner_helpers import serialize_messages_for_llm
 from ark_agentic.core.session.compaction import safe_digest
 from ark_agentic.core.types import AgentMessage, MessageRole, SessionEntry
 
-from egis_opencode.agents.coding.tools.bash import BashTool
-from egis_opencode.agents.coding.tools.files import ListTool, ReadTool, WriteTool
-from egis_opencode.agents.coding.tools.search import GlobTool, GrepTool
+from egis_opencode.core.tools.bash import BashTool
+from egis_opencode.core.tools.files import ListTool, ReadTool, WriteTool
+from egis_opencode.core.tools.search import GlobTool, GrepTool
 from egis_opencode.events import TOOL_DIGEST
 
 from ..helpers import RecordingHandler

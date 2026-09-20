@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ark_agentic import BaseAgent
+from ark_agentic.core.llm.factory import create_chat_model_from_env
+from ark_agentic.core.llm.sampling import SamplingConfig
 from ark_agentic.core.runtime.callbacks import RunnerCallbacks
 from ark_agentic.core.runtime._runner_types import RunnerConfig
 from ark_agentic.core.skills.base import SkillConfig
@@ -32,9 +34,11 @@ from ark_agentic.core.skills.loader import SkillLoader
 from ark_agentic.core.skills.matcher import SkillMatcher
 from ark_agentic.core.types import SkillLoadMode
 
+from ..config import settings
 from ..permissions import PermissionGuard, ruleset_for_mode
 from ..permissions.service import permission_service
 from ..sessions.title import TitleGenerator, title_store
+from .doom_loop import DoomLoopGuard
 from .tools import CodingMode, create_coding_tools
 
 logger = logging.getLogger(__name__)
@@ -185,6 +189,26 @@ class CodingBaseAgent(BaseAgent):
 
     # ── 工具 / 执行 / 回调（原 CodingAgent 全量平移）────────────
 
+    def build_llm(self):
+        """MAIN LLM 输出预算与采样参数对齐 opencode / Qwen 官方推荐。
+
+        ark ``SamplingConfig`` 默认 ``max_tokens=4096`` + 低温 0.1：
+        - 预算：thinking + 正文 + tool call arguments 共享，写长脚本极易
+          ``finish_reason="length"``，ark 将其按 run 终止处理并丢弃当轮
+          tool calls（前端“轮次上限”假象 + 写入半截脚本）；
+        - 采样：qwen3.5 thinking 官方推荐 temperature=0.6 / top_p=0.95，
+          0.1 属复读退化高危区（官方明确 “DO NOT use greedy”）；
+          presence_penalty 官方不建议设，0.6 会抗乱长输出。
+        """
+        return create_chat_model_from_env(
+            sampling=SamplingConfig.for_chat(
+                temperature=0.6,
+                top_p=0.95,
+                presence_penalty=0.0,
+                max_tokens=settings.max_output_tokens,
+            ),
+        )
+
     def build_tools(self):
         return create_coding_tools(self, mode=self.mode)
 
@@ -210,13 +234,15 @@ class CodingBaseAgent(BaseAgent):
             service=permission_service,
             base_ruleset=ruleset_for_mode(self.mode),
         )
+        doom = DoomLoopGuard(agent=self)
 
         async def _cleanup_run(ctx: Any, **kwargs: Any) -> None:
-            """after_agent：run 结束清理授权缓存与挂起请求。"""
+            """after_agent：run 结束清理授权缓存与 doom 观察态。"""
             guard.discard_run(ctx.run_id)
+            doom.discard_run(ctx.run_id)
 
         return RunnerCallbacks(
-            before_tool=[guard],
+            before_tool=[guard, doom],
             after_agent=[_cleanup_run, TitleGenerator(title_store)],
         )
 

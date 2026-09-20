@@ -16,6 +16,7 @@ from ark_agentic.core.skills.loader import SkillLoader
 from ark_agentic.core.types import SkillLoadMode
 
 from egis_opencode.agents.wiki_agent import WikiAgent
+from egis_opencode.config import settings
 from egis_opencode.workspace.commands import discover_commands
 
 from tests.helpers import MockChatModel
@@ -41,6 +42,30 @@ def test_wiki_agent_identity():
     assert WikiAgent.max_turns == 200
 
 
+def test_build_llm_injects_max_output_tokens(monkeypatch):
+    """build_llm 注入输出预算与 Qwen 推荐采样（ark 默认是 length 截断与复读退化根因）。"""
+    captured: dict = {}
+
+    def _fake_factory(**kwargs):
+        captured.update(kwargs)
+        return MockChatModel(responses=[])
+
+    monkeypatch.setattr(
+        "egis_opencode.core.agent.create_chat_model_from_env", _fake_factory
+    )
+    WikiAgent.build_llm(WikiAgent)
+    sampling = captured.get("sampling")
+    assert sampling is not None, "build_llm 未注入 sampling"
+    assert sampling.max_tokens == settings.max_output_tokens
+    # qwen3.5 thinking 官方推荐：低温 0.1 属复读退化高危区
+    assert sampling.temperature == 0.6
+    assert sampling.top_p == 0.95
+    assert sampling.presence_penalty == 0.0
+    assert settings.max_output_tokens >= 32_000, (
+        "输出预算需对齐 opencode OUTPUT_TOKEN_MAX=32000 量级"
+    )
+
+
 def test_wiki_command_dir_builtin_commands(tmp_path: Path):
     """command_dir 指向 agents/wiki-agent/commands，含 ingest/query/lint。"""
     agent = _make_agent(tmp_path)
@@ -50,6 +75,34 @@ def test_wiki_command_dir_builtin_commands(tmp_path: Path):
     assert set(commands) >= {"ingest", "query", "lint"}
     # frontmatter description 提取正常（面板展示用）
     assert commands["ingest"].description
+
+
+def test_read_reference_native_auto_visibility(tmp_path: Path):
+    """read_reference 回归 ark 原生 auto 可见性：SKILL.md frontmatter 声明
+    ``required_tools: [read_reference]`` 才对模型可见（不做 always 提升）。"""
+    agent = _make_agent(tmp_path)
+    tool = agent.tool_registry.get("read_reference") if hasattr(
+        agent.tool_registry, "get"
+    ) else None
+    if tool is None:  # ToolRegistry 无 get 时从 list_all 找
+        tool = next(
+            (t for t in agent.tool_registry.list_all() if t.name == "read_reference"),
+            None,
+        )
+    assert tool is not None, "read_reference 应由 ark _finish_wiring 原生注册"
+    assert tool.visibility == "auto", (
+        "不应存在 always 提升：可见性由 skill frontmatter 的 "
+        "required_tools 声明驱动"
+    )
+
+    # dynamic 模式：无激活 skill（或未声明 required_tools）时不可见
+    from ark_agentic.core.runtime._runner_helpers import filter_visible_tools
+
+    visible = filter_visible_tools(
+        agent.tool_registry, agent.skill_loader,
+        agent.skill_loader.config.load_mode, None,
+    )
+    assert "read_reference" not in {t.name for t in visible}
 
 
 def test_reload_workspace_skills_mounts_nested_project(tmp_path: Path):

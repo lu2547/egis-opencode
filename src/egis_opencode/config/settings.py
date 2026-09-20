@@ -82,6 +82,25 @@ class Settings:
         default_factory=lambda: _env_int("CODING_SEARCH_MAX_RESULTS", 100)
     )
 
+    # ── LLM 单次输出（对齐 opencode OUTPUT_TOKEN_MAX=32000）──
+    #: 单次 LLM 输出 token 上限。ark SamplingConfig 默认 4096 过小：
+    #: thinking + 正文 + tool call arguments 共享该预算，写长脚本时
+    #: finish_reason="length"，ark 将其按 run 终止处理并丢弃当轮
+    #: tool calls（前端表现为“轮次上限”假象 + 脚本写入截断）。
+    max_output_tokens: int = field(
+        default_factory=lambda: _env_int("CODING_MAX_OUTPUT_TOKENS", 32_000)
+    )
+
+    # ── Doom loop 护栏（对齐 opencode DOOM_LOOP_THRESHOLD；防复读退化）──
+    #: 连续 N 次完全相同 (tool, args) 调用判定为死循环命中
+    doom_loop_threshold: int = field(
+        default_factory=lambda: _env_int("CODING_DOOM_LOOP_THRESHOLD", 3)
+    )
+    #: run 内累计第 N 次命中 → ToolLoopAction.STOP 熔断终止
+    doom_loop_max_hits: int = field(
+        default_factory=lambda: _env_int("CODING_DOOM_LOOP_MAX_HITS", 5)
+    )
+
     # ── 工具输出统一截断（对齐 opencode tool_output；防上下文爆炸）──
     #: read / bash 等工具输出的行数上限（超出截断 + 续读提示）
     tool_output_max_lines: int = field(

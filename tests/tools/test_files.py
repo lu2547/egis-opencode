@@ -369,6 +369,31 @@ async def test_write_missing_content_error(ws_user_root):
     assert result.is_error is True
 
 
+async def test_write_noop_same_content_intercepted(ws_user_root, recorder):
+    """拟写入内容与磁盘完全一致 → no-op 拦截（死循环复读源头防线）。"""
+    target = ws_user_root / "a.txt"
+    target.write_text("same")
+
+    result = await WriteTool().execute(
+        _call("write", path="a.txt", content="same"), _ctx(recorder),
+    )
+
+    assert result.is_error is True, "重复写入应被拦截并喂回 error"
+    assert "重复写入" in str(result.content)
+    assert "no-op" in str(result.content)
+    # 只发 error 状态 digest（非 success 修改卡片：未发生实际修改）
+    digests = recorder.of_type(TOOL_DIGEST)
+    assert len(digests) == 1
+    assert digests[0]["status"] == "error"
+
+    # 内容不同则照常覆写
+    result2 = await WriteTool().execute(
+        _call("write", path="a.txt", content="changed"), _ctx(recorder),
+    )
+    assert result2.is_error is False
+    assert target.read_text() == "changed"
+
+
 # ── edit ───────────────────────────────────────────────
 
 

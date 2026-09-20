@@ -161,6 +161,18 @@ async def chat(request: ChatRequest, http_request: Request):
                 run_options=RunOptions(sampling_override=None),
                 handler=bus,
             )
+            if (
+                result.stopped_by_limit
+                and getattr(result.response, "finish_reason", None) == "length"
+            ):
+                # 区分于真轮次预算耗尽：单次输出撞 max_tokens 被截断，
+                # ark 丢弃当轮 tool calls 后终止 run（前端“轮次上限”假象）。
+                logger.warning(
+                    "Run stopped by output-length limit "
+                    "(max_tokens=%d); tool calls of the truncated turn "
+                    "were discarded, session=%s",
+                    settings.max_output_tokens, session_id,
+                )
             bus.emit_completed(
                 message=result.response.content or "",
                 tool_calls=_tool_calls_payload(result) or None,

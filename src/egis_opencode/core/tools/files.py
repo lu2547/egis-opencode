@@ -256,15 +256,27 @@ class WriteTool(CodingTool):
             )
 
         # 旧内容预览 + 写入整体丢线程池（同 read：事件循环不碰文件 IO）
-        existed, old_preview, write_error = await asyncio.to_thread(
+        existed, old_preview, write_error, unchanged = await asyncio.to_thread(
             _write_file, path, str(content),
         )
         if write_error is not None:
             return self._error(
                 tool_call, f"写入失败: {write_error}", context=context,
             )
-
         display = self._display(context, path)
+        if unchanged:
+            # no-op 短路：拟写入内容与磁盘完全一致 —— 死循环里最常见的
+            # 复读形态（每轮重写同一份内容），在源头拦住并以 error 喂回
+            # 促模型继续推进，而不是再落一次盘、上下文再涨一轮
+            return self._error(
+                tool_call,
+                f"拟写入内容与 {display}() 当前内容完全一致，本次为重复写入"
+                "（no-op），未修改。请勿重复写入相同内容：若任务已完成，"
+                "直接输出最终答复；若需修改，请调整内容后用 edit 做局部修改。",
+                digest=f"[tool:write status=error] 重复写入被拦截（内容未变）。",
+                context=context,
+            )
+
         self._emit_digest(
             context,
             tool_name="write", tool_call_id=tool_call.id,
@@ -540,23 +552,29 @@ def _extract_docx(path: Path) -> tuple[list[str], str | None]:
         return [], f"docx 提取失败（文件损坏或非 Word 文档）: {exc}"
 
 
-def _write_file(path: Path, content: str) -> tuple[bool, str, str | None]:
-    """写文件（含旧内容预览提取）；返回 (existed, old_preview, error)。"""
+def _write_file(path: Path, content: str) -> tuple[bool, str, str | None, bool]:
+    """写文件（含旧内容预览提取）；返回 (existed, old_preview, error, unchanged)。
+
+    unchanged：磁盘内容与拟写入逐字节一致（no-op，由调用方短路）。
+    """
     existed = path.exists()
     old_preview = ""
+    unchanged = False
     if existed and path.is_file():
         try:
-            old_preview = diff_preview(
-                path.read_text(encoding="utf-8", errors="replace"),
-            )
+            old_text = path.read_text(encoding="utf-8", errors="replace")
+            old_preview = diff_preview(old_text)
+            unchanged = old_text == content
         except OSError:
             old_preview = ""
+    if unchanged:
+        return existed, old_preview, None, True
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
-        return existed, old_preview, str(exc)
-    return existed, old_preview, None
+        return existed, old_preview, str(exc), False
+    return existed, old_preview, None, False
 
 
 def _list_entries(path: Path) -> list[dict[str, Any]]:
